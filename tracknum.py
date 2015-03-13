@@ -43,28 +43,23 @@ program_license = '''%s
 def parseArgs():
   # Setup argument parser
   parser = ArgumentParser(description = program_license, formatter_class = RawDescriptionHelpFormatter)
-  parser.add_argument('m4aFile', help = "M4A file to rename")
+  parser.add_argument('srcDir', help = "Source directory")
   parser.add_argument("dstDir", help = "Destination directory")
 
   return parser.parse_args()
 
 def validateArgs():
-  # is the file specified?
-  if not arguments.m4aFile:
-    print >> sys.stderr, "ERROR: must specify an M4A file"
+  # is the source directory specified?
+  if not arguments.srcDir:
+    print >> sys.stderr, "ERROR: must specify a source directory"
     sys.exit()
 
   # does the file exist?
-  if not os.path.isfile(arguments.m4aFile):
-    print >> sys.stderr, "ERROR: '" + arguments.m4aFile + "' does not exist"
+  if not os.path.isdir(arguments.srcDir):
+    print >> sys.stderr, "ERROR: '" + arguments.srcDir + "' does not exist or is not a directory"
     sys.exit()
 
-  # does the file end in .m4a?
-  if arguments.m4aFile[-4:] != ".m4a":
-    print >> sys.stderr, "ERROR: '" + arguments.m4aFile + "' is not an m4a file"
-    sys.exit()
-
-  # is the directory specified?
+  # is the output directory specified?
   if not arguments.dstDir:
     print >> sys.stderr, "ERROR: must specify a destination directory"
     sys.exit()
@@ -78,12 +73,12 @@ def validateArgs():
     print >> sys.stderr, "ERROR: '" + arguments.dstDir + "' exists but is not a directory"
     sys.exit()
 
-def readFileTags():
+def readFileTags(trackFile):
   title = ""
   track = 0
   trackTotal = 0
   try:
-    output = subprocess.check_output(['/usr/bin/mp4info', arguments.m4aFile])
+    output = subprocess.check_output(['/usr/bin/mp4info', trackFile])
   except subprocess.CalledProcessError as e:
     print >> sys.stderr, "ERROR: couldn't read mp4 tags"
     sys.exit()
@@ -108,22 +103,29 @@ def readFileTags():
 
   return (title, track, trackTotal)
 
-def copyTrackFile():
-  (trackName, trackNum, trackTotal) = readFileTags()
+def copyTrackFile(trackSrcFile):
+  (trackName, trackNum, trackTotal) = readFileTags(trackSrcFile)
   trackFileName = ""
   if (trackTotal > 99 and trackNum < 100):
       trackFileName = "0"
   trackFileName = trackFileName + str(trackNum) + " " + trackName + ".m4a"
-  print "Old track name: " + os.path.basename(arguments.m4aFile)
+  print "Old track name: " + os.path.basename(trackSrcFile)
   print "New track name: " + trackFileName
-  outPath = os.path.join(arguments.dstDir, trackFileName)
-  print "New destination: " + outPath
-  shutil.copyfile(arguments.m4aFile, outPath)
-  st = os.stat(arguments.m4aFile)
+  trackDstFile = os.path.join(arguments.dstDir, trackFileName)
+  print "New destination: " + trackDstFile 
+  shutil.copyfile(trackSrcFile, trackDstFile)
+  st = os.stat(trackSrcFile)
   if hasattr(os, 'utime'):
-    os.utime(outPath, (st.st_atime, st.st_mtime))
+    os.utime(trackDstFile, (st.st_atime, st.st_mtime))
+  print
 
 if __name__ == "__main__":
   arguments = parseArgs()
   validateArgs()
-  copyTrackFile()
+  files = os.listdir(arguments.srcDir)
+  files.sort()
+  for f in files:
+    if not f.startswith("."):
+        filePath = os.path.join(arguments.srcDir, f)
+        print "File name: " + filePath
+        copyTrackFile(filePath)

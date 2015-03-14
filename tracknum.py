@@ -45,6 +45,7 @@ def parseArgs():
   parser = ArgumentParser(description = program_license, formatter_class = RawDescriptionHelpFormatter)
   parser.add_argument('srcDir', help = "Source directory")
   parser.add_argument("dstDir", help = "Destination directory")
+  parser.add_argument("-t", "--set-track", action="store_true", dest="setTrack", help = "Set the track number tag", default = False)
 
   return parser.parse_args()
 
@@ -71,6 +72,13 @@ def validateArgs():
   # does the location exist but it's not a directory?
   elif not os.path.isdir(arguments.dstDir):
     print >> sys.stderr, "ERROR: '" + arguments.dstDir + "' exists but is not a directory"
+    sys.exit()
+
+def setTrackNumTag(trackFile, number):
+  try:
+    output = subprocess.check_output(['/usr/bin/mp4tags', '-t', str(number), trackFile])
+  except subprocess.CalledProcessError as e:
+    print >> sys.stderr, "ERROR: couldn't set the mp4 tag on file:" + trackFile
     sys.exit()
 
 def readFileTags(trackFile):
@@ -103,29 +111,53 @@ def readFileTags(trackFile):
 
   return (title, track, trackTotal)
 
-def copyTrackFile(trackSrcFile):
+def copyTrackFile(trackSrcFile, forceTrackNum = 0):
   (trackName, trackNum, trackTotal) = readFileTags(trackSrcFile)
   trackFileName = ""
-  if (trackTotal > 99 and trackNum < 100):
-      trackFileName = "0"
-  trackFileName = trackFileName + str(trackNum) + " " + trackName + ".m4a"
+  if forceTrackNum > 0:
+      trackNum = forceTrackNum
+  if trackTotal > 9 and trackNum < 10:
+      trackFileName += "0"
+  if trackTotal > 99 and trackNum < 100:
+      trackFileName += "0"
+  trackFileName += str(trackNum) + " " + trackName + ".m4a"
+
   print "Old track name: " + os.path.basename(trackSrcFile)
   print "New track name: " + trackFileName
+
   trackDstFile = os.path.join(arguments.dstDir, trackFileName)
   print "New destination: " + trackDstFile 
+
   shutil.copyfile(trackSrcFile, trackDstFile)
   st = os.stat(trackSrcFile)
   if hasattr(os, 'utime'):
     os.utime(trackDstFile, (st.st_atime, st.st_mtime))
+
+  if forceTrackNum > 0:
+    print "Resetting track number to: " + str(count)
+    setTrackNumTag(trackDstFile, count)
   print
 
 if __name__ == "__main__":
   arguments = parseArgs()
   validateArgs()
-  files = os.listdir(arguments.srcDir)
-  files.sort()
+  rawFiles = os.listdir(arguments.srcDir)
+  rawFiles.sort()
+  files = []
+
+  # need an accurate count -- only keep .m4a files
+  for f in rawFiles:
+    filePath = os.path.join(arguments.srcDir, f)
+    if not f.startswith(".") and f.endswith(".m4a") and os.path.isfile(filePath):
+      files.append(f)
+
+  count = 1;
   for f in files:
-    if not f.startswith("."):
-        filePath = os.path.join(arguments.srcDir, f)
-        print "File name: " + filePath
-        copyTrackFile(filePath)
+    filePath = os.path.join(arguments.srcDir, f)
+    #print "File name: " + filePath
+    forceTrackNum = 0
+    if arguments.setTrack:
+      forceTrackNum = count
+    copyTrackFile(filePath, forceTrackNum)
+    count += 1
+

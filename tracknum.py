@@ -45,7 +45,7 @@ def parseArgs():
   parser = ArgumentParser(description = program_license, formatter_class = RawDescriptionHelpFormatter)
   parser.add_argument('srcDir', help = "Source directory")
   parser.add_argument("dstDir", help = "Destination directory")
-  parser.add_argument("-t", "--set-track", action="store_true", dest="setTrack", help = "Set the track number tag", default = False)
+  parser.add_argument("-n", "--track-num", dest="startTrackNum", type=int, help = "Start tracks at this number", default = 1)
 
   return parser.parse_args()
 
@@ -72,6 +72,11 @@ def validateArgs():
   # does the location exist but it's not a directory?
   elif not os.path.isdir(arguments.dstDir):
     print >> sys.stderr, "ERROR: '" + arguments.dstDir + "' exists but is not a directory"
+    sys.exit()
+
+  # validate the track number
+  if arguments.startTrackNum < 1:
+    print >> sys.stderr, "ERROR: track number must be 1 or greater"
     sys.exit()
 
 def setTrackNumTag(trackFile, number):
@@ -111,11 +116,11 @@ def readFileTags(trackFile):
 
   return (title, track, trackTotal)
 
-def copyTrackFile(trackSrcFile, forceTrackNum = 0):
+def copyTrackFile(trackSrcFile, startTrackNum = 1):
   (trackName, trackNum, trackTotal) = readFileTags(trackSrcFile)
   trackFileName = ""
-  if forceTrackNum > 0:
-      trackNum = forceTrackNum
+  if startTrackNum > 1:
+      trackNum = startTrackNum
   if trackTotal > 9 and trackNum < 10:
       trackFileName += "0"
   if trackTotal > 99 and trackNum < 100:
@@ -133,9 +138,9 @@ def copyTrackFile(trackSrcFile, forceTrackNum = 0):
   if hasattr(os, 'utime'):
     os.utime(trackDstFile, (st.st_atime, st.st_mtime))
 
-  if forceTrackNum > 0:
-    print "Resetting track number to: " + str(count)
-    setTrackNumTag(trackDstFile, count)
+  if startTrackNum > 0:
+    print "Resetting track number to: " + str(trackNum)
+    setTrackNumTag(trackDstFile, trackNum)
   print
 
 if __name__ == "__main__":
@@ -151,13 +156,13 @@ if __name__ == "__main__":
     if not f.startswith(".") and f.endswith(".m4a") and os.path.isfile(filePath):
       files.append(f)
 
-  count = 1;
+  count = 0;
   for f in files:
     filePath = os.path.join(arguments.srcDir, f)
     #print "File name: " + filePath
-    forceTrackNum = 0
-    if arguments.setTrack:
-      forceTrackNum = count
-    copyTrackFile(filePath, forceTrackNum)
+    startTrackNum = 1
+    if arguments.startTrackNum > 1:
+      startTrackNum = arguments.startTrackNum + count
+    copyTrackFile(filePath, startTrackNum)
     count += 1
 

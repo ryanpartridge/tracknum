@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/python3
 
 '''
 tracknum -- Custom Update Builder
@@ -20,9 +20,8 @@ It defines classes_and_methods
 import sys
 import os.path
 import string
-import re
-import subprocess
 import shutil
+import taglib
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 
@@ -42,7 +41,7 @@ program_license = '''%s
 
 def parseArgs():
   # Setup argument parser
-  parser = ArgumentParser(description = program_license, formatter_class = RawDescriptionHelpFormatter)
+  parser = ArgumentParser(description = program_license)
   parser.add_argument('srcDir', help = "Source directory")
   parser.add_argument("dstDir", help = "Destination directory")
   parser.add_argument("-n", "--track-num", dest="startTrackNum", type=int, help = "Start tracks at this number", default = 1)
@@ -52,17 +51,17 @@ def parseArgs():
 def validateArgs():
   # is the source directory specified?
   if not arguments.srcDir:
-    print >> sys.stderr, "ERROR: must specify a source directory"
+    print("ERROR: must specify a source directory", file=sys.stderr)
     sys.exit()
 
   # does the file exist?
   if not os.path.isdir(arguments.srcDir):
-    print >> sys.stderr, "ERROR: '" + arguments.srcDir + "' does not exist or is not a directory"
+    print("ERROR: '{}' does not exist or is not a directory".format(arguments.srcDir), file=sys.stderr)
     sys.exit()
 
   # is the output directory specified?
   if not arguments.dstDir:
-    print >> sys.stderr, "ERROR: must specify a destination directory"
+    print("ERROR: must specify a destination directory", file=sys.stderr)
     sys.exit()
 
   # create the directory if it doesn't exist
@@ -71,19 +70,21 @@ def validateArgs():
 
   # does the location exist but it's not a directory?
   elif not os.path.isdir(arguments.dstDir):
-    print >> sys.stderr, "ERROR: '" + arguments.dstDir + "' exists but is not a directory"
+    print("ERROR: '{}' exists but is not a directory".format(arguments.dstDir), file=sys.stderr)
     sys.exit()
 
   # validate the track number
   if arguments.startTrackNum < 1:
-    print >> sys.stderr, "ERROR: track number must be 1 or greater"
+    print("ERROR: track number must be 1 or greater", file=sys.stderr)
     sys.exit()
 
-def setTrackNumTag(trackFile, number):
+def setTrackNumTag(trackFile, number, total):
   try:
-    output = subprocess.check_output(['/usr/bin/mp4tags', '-t', str(number), trackFile])
-  except subprocess.CalledProcessError as e:
-    print >> sys.stderr, "ERROR: couldn't set the mp4 tag on file:" + trackFile
+    song = taglib.File(trackFile)
+    song.tags["TRACKNUMBER"] = ["{}/{}".format(number, total)]
+    song.save()
+  except:
+    print("ERROR: couuldn't set the mp4 tag on file: {}".format(trackFile))
     sys.exit()
 
 def readFileTags(trackFile):
@@ -91,33 +92,28 @@ def readFileTags(trackFile):
   track = 0
   trackTotal = 0
   try:
-    output = subprocess.check_output(['/usr/bin/mp4info', trackFile])
-  except subprocess.CalledProcessError as e:
-    print >> sys.stderr, "ERROR: couldn't read mp4 tags"
+    song = taglib.File(trackFile)
+  except OSError as e:
+    print("ERROR: couuldn't read mp4 tags from {}".format(trackFile), file=sys.stderr)
     sys.exit()
 
-  titlePattern = re.compile(r"^\s+Name:\s+(.+)$")
-  trackPattern = re.compile(r"^\s+Track:\s+(\d+)\s+of\s+(\d+).*$")
+  if "TITLE" in song.tags:
+    title = song.tags["TITLE"][0]
+    print("Track title: {}".format(title))
 
-  lines = string.split(output, "\n")
-  for line in lines:
-    matches = titlePattern.match(line)
-    if (matches != None):
-      title = matches.group(1)
-      print "Track title: " + title
-      continue
-
-    matches = trackPattern.match(line)
-    if (matches != None):
-      track = int(matches.group(1))
-      trackTotal = int(matches.group(2))
-      print "Track number: " + str(track) + " of " + str(trackTotal)
-      continue
+  if "TRACKNUMBER" in song.tags:
+    trackNumText = song.tags["TRACKNUMBER"][0]
+    parts = trackNumText.split('/')
+    if len(parts) == 2:
+      track = int(parts[0])
+      trackTotal = int(parts[1])
+      print("Track number: {} of {}".format(track, trackTotal))
 
   return (title, track, trackTotal)
 
 def copyTrackFile(trackSrcFile, startTrackNum = 1):
   (trackName, trackNum, trackTotal) = readFileTags(trackSrcFile)
+
   trackFileName = ""
   if startTrackNum > 1:
       trackNum = startTrackNum
@@ -127,11 +123,11 @@ def copyTrackFile(trackSrcFile, startTrackNum = 1):
       trackFileName += "0"
   trackFileName += str(trackNum) + " " + trackName + ".m4a"
 
-  print "Old track name: " + os.path.basename(trackSrcFile)
-  print "New track name: " + trackFileName
+  print("Old track name: {}".format(os.path.basename(trackSrcFile)))
+  print("New track name: {}".format(trackFileName))
 
   trackDstFile = os.path.join(arguments.dstDir, trackFileName)
-  print "New destination: " + trackDstFile 
+  print("New destination: {}".format(trackDstFile))
 
   shutil.copyfile(trackSrcFile, trackDstFile)
   st = os.stat(trackSrcFile)
@@ -139,9 +135,9 @@ def copyTrackFile(trackSrcFile, startTrackNum = 1):
     os.utime(trackDstFile, (st.st_atime, st.st_mtime))
 
   if startTrackNum > 0:
-    print "Resetting track number to: " + str(trackNum)
-    setTrackNumTag(trackDstFile, trackNum)
-  print
+    print("Resetting track number to: {}".format(trackNum))
+    setTrackNumTag(trackDstFile, trackNum, trackTotal)
+  print()
 
 if __name__ == "__main__":
   arguments = parseArgs()
@@ -159,7 +155,7 @@ if __name__ == "__main__":
   count = 0;
   for f in files:
     filePath = os.path.join(arguments.srcDir, f)
-    #print "File name: " + filePath
+    #print("File name: {}".format(filePath))
     startTrackNum = 1
     if arguments.startTrackNum > 1:
       startTrackNum = arguments.startTrackNum + count
